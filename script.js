@@ -11,16 +11,17 @@ resize();
 let baseColor = "#00ffaa";
 const gravity = 0.35; 
 const friction = 0.985; 
-const bounce = 0.15; // Slightly reduced to prevent jitter on flat surfaces
+const bounce = 0.15; 
 
 const totalPoints = 36; 
 const radius = 85; 
 const targetArea = Math.PI * radius * radius; 
 
-// --- STABILITY LIMITS ---
+// --- STABILITY & ANTI-DRIFT LIMITS ---
 const MAX_VELOCITY = 12;        
 const MAX_STRETCH_FACTOR = 1.5; 
 const MIN_STRETCH_FACTOR = 0.5; 
+const VELOCITY_DEADZONE = 0.015; // Any tiny micro-movements below this value are killed immediately
 
 let points = [];
 let isDragging = false;
@@ -65,6 +66,10 @@ function updatePhysics() {
         let vx = (p.x - p.oldX) * friction;
         let vy = (p.y - p.oldY) * friction;
 
+        // Apply Deadzone Constraint to stop lateral creeping
+        if (Math.abs(vx) < VELOCITY_DEADZONE) vx = 0;
+        if (Math.abs(vy) < VELOCITY_DEADZONE) vy = 0;
+
         const speed = Math.hypot(vx, vy);
         if (speed > MAX_VELOCITY) {
             vx = (vx / speed) * MAX_VELOCITY;
@@ -84,7 +89,8 @@ function updatePhysics() {
         p.oldX = p.x;
         p.oldY = p.y;
 
-        p.x += vx;
+        // Hard lock horizontal gravity to 0 to eliminate sliding bias
+        p.x += vx; 
         p.y += vy + gravity;
 
         if (isDragging) {
@@ -104,36 +110,32 @@ function updatePhysics() {
             p.y += (targetDistY - p.y) * 0.04;
         }
 
-        // --- EVEN SURFACE BOUNDARY CLAMPING ---
+        // Boundary Clamping with active leveling friction
         const margin = 12;
         
-        // Bottom Boundary
         if (p.y > canvas.height - margin) { 
             p.y = canvas.height - margin; 
             p.oldY = p.y + Math.abs(vy) * bounce; 
-            p.oldX = p.x - (p.x - p.oldX) * 0.7; // Zero out erratic sliding energy
+            p.oldX = p.x - (p.x - p.oldX) * 0.6; // Kills horizontal drift momentum instantly on contact
         }
-        // Top Boundary
         if (p.y < margin) { 
             p.y = margin; 
             p.oldY = p.y - Math.abs(vy) * bounce; 
         }
-        // Right Boundary (Enforces a flat vertical rest profile)
         if (p.x > canvas.width - margin) { 
             p.x = canvas.width - margin; 
             p.oldX = p.x + Math.abs(vx) * bounce; 
-            p.oldY = p.y - (p.y - p.oldY) * 0.7; // Level out vertical sheer along the wall
+            p.oldY = p.y - (p.y - p.oldY) * 0.6; 
         }
-        // Left Boundary
         if (p.x < margin) { 
             p.x = margin; 
             p.oldX = p.x - Math.abs(vx) * bounce; 
-            p.oldY = p.y - (p.y - p.oldY) * 0.7;
+            p.oldY = p.y - (p.y - p.oldY) * 0.6;
         }
     });
 
     const restLength = (radius * 2 * Math.PI) / totalPoints;
-    const iterations = 8; // Increased execution pass iterations for tighter surface settling
+    const iterations = 8; 
 
     for (let step = 0; step < iterations; step++) {
         for (let i = 0; i < totalPoints; i++) {
